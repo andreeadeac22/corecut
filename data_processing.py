@@ -3,19 +3,22 @@
 # and nodes not connected to the largest connected component are removed
 # split edges in half---training set and half---test set
 
-import scipy as sc
 import os.path
+import pdb
+import pickle
+import math
+import random
+import argparse
+import scipy as sc
 import numpy as np
 from tqdm import tqdm
+
 from scipy import sparse
 import scipy.sparse.linalg as sp_linalg
 from scipy.sparse import csr_matrix
 import scipy.sparse.csgraph as csgr
 import networkx as nx
-import random
-import pdb
-import pickle
-import argparse
+
 
 
 # call using: sp_linalg.eigs(A_sparse, 3)
@@ -80,17 +83,14 @@ def process_dataset(dataset_name):
 
 
 def compute_vanilla_sc(G, resf, debug=False):
-	unnorm_L = nx.laplacian_matrix(G)
-
+	L = nx.normalized_laplacian_matrix(G)
 	A = (nx.to_scipy_sparse_matrix(G)).astype(float)
-	D = unnorm_L + A
-	L = csgr.laplacian(A, normed=True)
+	D = np.array([1/math.sqrt(val) for (node, val) in G.degree()])
 
-	sqrt_D = csr_matrix.sqrt(D)
-	D = sp_linalg.inv(sqrt_D)
+
 	vals, vecs = sp_linalg.eigs(L, k=2)
-	y_vecs = D.dot(vecs)
-	y_vecs = y_vecs[:,1]  # second eigenvector
+	vecs = vecs[:,1] # second eigenvector
+	y_vecs = D*vecs
 
 	i=0
 	yns = []
@@ -100,29 +100,24 @@ def compute_vanilla_sc(G, resf, debug=False):
 
 	yns = sorted(yns, key=lambda tup: tup[0])
 
-	seq = []
-	rest_seq = [el[1] for el in yns]
+	total_seq = [el[1] for el in yns]
 	min_conduct = 1
 
 	for i in tqdm(range(len(vecs) - 1), mininterval=3, leave=False, desc='  - (Vanilla)   '):
-		seq += [yns[i][1]]
-		rest_seq = rest_seq[1:]
+		seq = total_seq[:(i+1)]
+		rest_seq = total_seq[(i+1):]
 
 		if(nx.volume(G, seq) != 0 and nx.volume(G, rest_seq) != 0):
-			if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
 				conduct = nx.algorithms.conductance(G=G, S=seq)
+				print("conduct", conduct)
 				if conduct < min_conduct:
 					min_cardinal = min(len(seq), len(rest_seq))
 					min_conduct = conduct
-			else:
-				conduct = nx.algorithms.conductance(G=G, S=rest_seq)
-				if conduct < min_conduct:
-					min_cardinal = min(len(seq), len(rest_seq))
-					min_conduct = conduct
+					min_seq = seq.copy()
 
 	print("min_conduct", min_conduct, file=resf)
 	print("min_cardinal", min_cardinal, file=resf)
-	return min_conduct
+	return min_conduct, min_seq
 
 
 def get_corecut(G, S, tau, n):
@@ -147,25 +142,18 @@ def compute_regularised_sc(G, resf, debug=False):
 
 	tau = sum_deg/n
 
-
-	unnorm_L = nx.laplacian_matrix(G)
 	A = (nx.to_scipy_sparse_matrix(G)).astype(float)
 
 	indices = [i for i in range(n)]
 	row = np.array(indices)
 	col = row
-	data = [ d + tau/n for d in degrees]
+	data = [ 1/math.sqrt(d + tau/n) for d in degrees]
 	D = csr_matrix((data, (row, col)), shape=(n, n))  #degree matrix
-
-	sqrt_D = csr_matrix.sqrt(D)
-	D = sp_linalg.inv(sqrt_D) # D ^ (-1/2)
 
 	id_data = np.ones(n)
 	I = csr_matrix((id_data, (row, col)), shape=(n, n))  #identity matrix
 
-	#L = I - csr_matrix(csr_matrix(D).multiply(csr_matrix(A))).multiply(csr_matrix(D)) #normed tau laplacian
 	L = I - (D@A)@D
-	#print("L", L)
 
 	vals, vecs = sp_linalg.eigs(L, k=2)
 	y_vecs = D.dot(vecs)
@@ -180,30 +168,30 @@ def compute_regularised_sc(G, resf, debug=False):
 	yns = sorted(yns, key=lambda tup: tup[0])
 
 
-	seq = []
-	rest_seq = [ el[1] for el in yns]
+	total_seq = [el[1] for el in yns]
 	min_corecut =  1
 
-
 	for i in tqdm(range(len(vecs) - 1), mininterval=3, leave=False, desc='  - (Regularised)   '):
-		seq += [yns[i][1]]  # check why volume is 0
-		rest_seq = rest_seq[1:]
+		seq = total_seq[:(i + 1)]
+		rest_seq = total_seq[(i + 1):]
 
 		if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
 			corecut = get_corecut(G=G, S=seq, tau=tau, n=n)
 			if corecut < min_corecut:
 				min_cardinal = min(len(seq), len(rest_seq))
 				min_corecut = corecut
+				min_seq = seq.copy()
 		else:
 			corecut = get_corecut(G=G, S=rest_seq, tau=tau, n=n)
 			if corecut < min_corecut:
 				min_cardinal = min(len(seq), len(rest_seq))
 				min_corecut = corecut
+				min_seq = rest_seq.copy()
 
 
 	print("min_corecut", min_corecut, file=resf)
 	print("min_cardinal", min_cardinal, file=resf)
-	return min_corecut
+	return min_corecut, min_seq
 
 
 
@@ -243,12 +231,13 @@ def main():
 
 		print("###############    REG     TRAIN        ###################################")
 		print("###############    REG     TRAIN        ###################################", file=resf)
-		train_rsc = compute_regularised_sc(G_train, resf=resf)
+		train_rsc, min_seq1 = compute_regularised_sc(G_train, resf=resf)
 
 		print("###############  REG  TEST        ###################################")
 		print("###############  REG  TEST        ###################################", file=resf)
-		test_rsc = compute_regularised_sc(G_test, resf=resf)
+		test_rsc = nx.algorithms.conductance(G_test, min_seq1)
 		print("regularised train_rsc", train_rsc)
+		print("min_seq1", len(min_seq1))
 		print("regularised test_rsc", test_rsc)
 
 
@@ -256,12 +245,13 @@ def main():
 
 		print("###############   VAN      TRAIN        ###################################")
 		print("###############   VAN      TRAIN        ###################################", file=resf)
-		train_vsc = compute_vanilla_sc(G_train, resf=resf)
+		train_vsc, min_seq2 = compute_vanilla_sc(G_train, resf=resf)
 
 		print("###############   VAN  TEST        ###################################")
 		print("###############   VAN   TEST        ###################################", file=resf)
-		test_vsc = compute_vanilla_sc(G_test, resf=resf, debug=False)
+		test_vsc = nx.algorithms.conductance(G_test, min_seq2)
 		print("vanilla train_vsc", train_vsc)
+		print("min_seq1", len(min_seq2))
 		print("vanilla test_vsc", test_vsc)
 
 
