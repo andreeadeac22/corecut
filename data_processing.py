@@ -121,29 +121,52 @@ def compute_vanilla_sc(G, resf, debug=False):
 	return min_conduct
 
 
-def compute_regularised_sc(G, resf, debug=True):
+def get_corecut(G, S, tau, n):
+	vol = nx.volume(G,S)
+	cut = nx.cut_size(G, S)
+	s_size = len(S)
+	sc_size = n - s_size
+	up = cut + (tau/n)*s_size*sc_size
+	down = vol + tau*s_size
+	return up/down
 
-	
-	degrees = sum(list(G.degree([0,1]).values()))
+
+def compute_regularised_sc(G, resf, debug=False):
+
+	degrees = [val for (node, val) in G.degree()]
+	sum_deg = sum(degrees)
+	n = len(degrees)
+
+	tau = sum_deg/n
+
 
 	unnorm_L = nx.laplacian_matrix(G)
 	A = (nx.to_scipy_sparse_matrix(G)).astype(float)
-	D = unnorm_L + A
 
-	tau_D =
-
-	L = csgr.laplacian(A, normed=True)
+	indices = [i for i in range(n)]
+	row = np.array(indices)
+	col = row
+	data = [ d + tau/n for d in degrees]
+	D = csr_matrix((data, (row, col)), shape=(n, n))  #degree matrix
 
 	sqrt_D = csr_matrix.sqrt(D)
-	D = sp_linalg.inv(sqrt_D)
+	D = sp_linalg.inv(sqrt_D) # D ^ (-1/2)
+
+	id_data = np.ones(n)
+	I = csr_matrix((id_data, (row, col)), shape=(n, n))  #identity matrix
+
+	#L = I - csr_matrix(csr_matrix(D).multiply(csr_matrix(A))).multiply(csr_matrix(D)) #normed tau laplacian
+	L = I - (D@A)@D
+	#print("L", L)
+
 	vals, vecs = sp_linalg.eigs(L, k=2)
 	y_vecs = D.dot(vecs)
 	y_vecs = y_vecs[:, 1]  # second eigenvector
 
 	i = 0
 	yns = []
-	for n in G.nodes():
-		yns += [[y_vecs[i], n]]
+	for node in G.nodes():
+		yns += [[y_vecs[i], node]]
 		i += 1
 
 	yns = sorted(yns, key=lambda tup: tup[0])
@@ -151,24 +174,23 @@ def compute_regularised_sc(G, resf, debug=True):
 	min_seq = [yns[0][1]]
 	print("minseq", min_seq, file=resf)
 
-	min_conduct = nx.algorithms.conductance(G=G, S=min_seq)
+	min_corecut = get_corecut(G=G, S=min_seq, tau=tau, n=n)
 	seq = [yns[0][1]]
 
-	print("min_conduct", min_conduct, file=resf)
+	print("min_corecut", min_corecut, file=resf)
 
 	for i in range(1, len(vecs) - 1):
-		seq += [yns[i][1]]  # check why volume is 0
+		seq += [yns[i][1]]
 		if debug:
 			print("seq", seq, file=resf)
-			conduct = nx.algorithms.conductance(G=G, S=seq)
-			if conduct < min_conduct:
-				min_conduct = conduct
-				min_seq = seq
+		corecut = get_corecut(G=G, S=seq, tau=tau, n=n)
+		if corecut < min_corecut:
+			min_corecut = corecut
+			min_seq = seq
 
-		print("min_conduct", min_conduct, file=resf)
-		print("min_seq", min_seq, file=resf)
-		return min_conduct
-
+	print("min_corecut", min_corecut, file=resf)
+	print("min_seq", min_seq, file=resf)
+	return min_corecut
 
 
 
@@ -176,11 +198,15 @@ def process_all_datasets(list):
 	for i in list:
 		process_dataset(list)
 
+
+def plot():
+	# number of nodes in the smaller partition set
+
 def experiments():
 	dataset_name = "data/ca-GrQc"
 	G_train, G_test = process_dataset(dataset_name)
 	resf = open(dataset_name + "_results.txt", 'w')
-	compute_regularised_sc(G_test, resf, debug=true)
+	compute_regularised_sc(G_test, resf, debug=True)
 
 
 def main():
@@ -195,20 +221,30 @@ def main():
 		dataset_name = "data/ca-GrQc"
 		G_train, G_test = process_dataset(dataset_name)
 		resf = open(dataset_name + "_results.txt", 'w')
-		print("###############         TRAIN        ###################################")
-		print("###############         TRAIN        ###################################", file=resf)
 
+		print("###############    REG     TRAIN        ###################################")
+		print("###############    REG     TRAIN        ###################################", file=resf)
+		train_rsc = compute_regularised_sc(G_train, resf=resf)
+
+		print("###############  REG  TEST        ###################################")
+		print("###############  REG  TEST        ###################################", file=resf)
+		test_rsc = compute_regularised_sc(G_test, resf=resf)
+		print("regularised train_rsc", train_rsc)
+		print("regularised test_rsc", test_rsc)
+
+
+
+
+		print("###############   VAN      TRAIN        ###################################")
+		print("###############   VAN      TRAIN        ###################################", file=resf)
 		train_vsc = compute_vanilla_sc(G_train, resf=resf)
-		print("###############    TEST        ###################################")
-		print("###############    TEST        ###################################", file=resf)
 
+		print("###############   VAN  TEST        ###################################")
+		print("###############   VAN   TEST        ###################################", file=resf)
 		test_vsc = compute_vanilla_sc(G_test, resf=resf, debug=False)
+		print("vanilla train_vsc", train_vsc)
+		print("vanilla test_vsc", test_vsc)
 
-		#train_rsc = compute_regularised_sc(G_train)
-		#test_rsc = compute_regularised_sc(G_test)
-
-		print("train_vsc", train_vsc)
-		print("test_vsc", test_vsc)
 
 
 
