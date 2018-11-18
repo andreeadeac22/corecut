@@ -6,6 +6,7 @@
 import scipy as sc
 import os.path
 import numpy as np
+from tqdm import tqdm
 from scipy import sparse
 import scipy.sparse.linalg as sp_linalg
 from scipy.sparse import csr_matrix
@@ -99,38 +100,28 @@ def compute_vanilla_sc(G, resf, debug=False):
 
 	yns = sorted(yns, key=lambda tup: tup[0])
 
-	seq = [yns[0][1]]
-	rest_seq = [yns[i][1] for i in range(1,len(vecs)-1)]
-	min_cardinal = min(len(seq), len(rest_seq))
+	seq = []
+	rest_seq = [el[1] for el in yns]
+	min_conduct = 1
 
-	if(nx.volume(G, seq) < nx.volume(G, rest_seq)):
-		min_conduct = nx.algorithms.conductance(G=G, S=seq)
-	else:
-		min_conduct = nx.algorithms.conductance(G=G, S=rest_seq)
-	print("min_conduct", min_conduct, file=resf)
-
-	for i in range(1, len(vecs)-1):
-		seq += [yns[i][1]]  # check why volume is 0
+	for i in tqdm(range(len(vecs) - 1), mininterval=3, leave=False, desc='  - (Vanilla)   '):
+		seq += [yns[i][1]]
 		rest_seq = rest_seq[1:]
-		if debug:
-			print("seq", seq, file=resf)
 
-		if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
-			conduct = nx.algorithms.conductance(G=G, S=seq)
-			if conduct < min_conduct:
-				min_cardinal = min(len(seq), len(rest_seq))
-				min_conduct = conduct
-				min_seq = seq
-		else:
-			conduct = nx.algorithms.conductance(G=G, S=rest_seq)
-			if conduct < min_conduct:
-				min_cardinal = min(len(seq), len(rest_seq))
-				min_conduct = conduct
-				min_seq = rest_seq
+		if(nx.volume(G, seq) != 0 and nx.volume(G, rest_seq) != 0):
+			if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
+				conduct = nx.algorithms.conductance(G=G, S=seq)
+				if conduct < min_conduct:
+					min_cardinal = min(len(seq), len(rest_seq))
+					min_conduct = conduct
+			else:
+				conduct = nx.algorithms.conductance(G=G, S=rest_seq)
+				if conduct < min_conduct:
+					min_cardinal = min(len(seq), len(rest_seq))
+					min_conduct = conduct
 
 	print("min_conduct", min_conduct, file=resf)
 	print("min_cardinal", min_cardinal, file=resf)
-	#print("min_seq", min_seq, file=resf)
 	return min_conduct
 
 
@@ -141,11 +132,11 @@ def get_corecut(G, S, tau, n):
 	sc_size = n - s_size
 	up = cut + (tau/n)*s_size*sc_size
 	down = vol + tau*s_size
-	cond = cut/vol
-	if down < 0.1 or nx.algorithms.conductance(G,S) != cond:
+	if down == 0:
 		print("cut: {cut} ,   up: {up},      vol: {vol},      down: {down} ".format(cut=cut, up=up, vol=vol, down=down))
-		print("lib_conductance {} ", nx.algorithms.conductance(G, S))
-	return up/down
+		return 1
+	else:
+		return up/down
 
 
 def compute_regularised_sc(G, resf, debug=False):
@@ -189,45 +180,29 @@ def compute_regularised_sc(G, resf, debug=False):
 	yns = sorted(yns, key=lambda tup: tup[0])
 
 
-	seq = [yns[0][1]]
-	rest_seq = [yns[i][1] for i in range(1, len(vecs) - 1)]
+	seq = []
+	rest_seq = [ el[1] for el in yns]
+	min_corecut =  1
 
 
-	min_cardinal = min(len(seq), len(rest_seq))
-	if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
-		min_corecut = get_corecut(G=G, S=seq, tau=tau, n=n)
-	else:
-		min_corecut = get_corecut(G=G, S=rest_seq, tau=tau, n=n)
-
-
-	print("min_corecut", min_corecut, file=resf)
-
-
-	for i in range(1, len(vecs) - 1):
+	for i in tqdm(range(len(vecs) - 1), mininterval=3, leave=False, desc='  - (Regularised)   '):
 		seq += [yns[i][1]]  # check why volume is 0
 		rest_seq = rest_seq[1:]
-		if debug:
-			print("seq", seq, file=resf)
 
 		if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
 			corecut = get_corecut(G=G, S=seq, tau=tau, n=n)
 			if corecut < min_corecut:
-				#print("min")
 				min_cardinal = min(len(seq), len(rest_seq))
 				min_corecut = corecut
-				min_seq = seq
 		else:
 			corecut = get_corecut(G=G, S=rest_seq, tau=tau, n=n)
 			if corecut < min_corecut:
-				#print("min")
 				min_cardinal = min(len(seq), len(rest_seq))
 				min_corecut = corecut
-				min_seq = rest_seq
 
 
 	print("min_corecut", min_corecut, file=resf)
 	print("min_cardinal", min_cardinal, file=resf)
-	#print("min_seq", min_seq, file=resf)
 	return min_corecut
 
 
@@ -255,13 +230,14 @@ def experiments():
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-exp', '--experimental', action='store_true')
+	parser.add_argument('-file', '--file_name', default="data/p2p-Gnutella08")
 
 	opt = parser.parse_args()
 
 	if opt.experimental:
 		experiments()
 	else:
-		dataset_name = "data/p2p-Gnutella08"
+		dataset_name = opt.file_name
 		G_train, G_test = process_dataset(dataset_name)
 		resf = open(dataset_name + "_results.txt", 'w')
 
