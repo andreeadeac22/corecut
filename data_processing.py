@@ -141,6 +141,10 @@ def get_corecut(G, S, tau, n):
 	sc_size = n - s_size
 	up = cut + (tau/n)*s_size*sc_size
 	down = vol + tau*s_size
+	cond = cut/vol
+	if down < 0.1 or nx.algorithms.conductance(G,S) != cond:
+		print("cut: {cut} ,   up: {up},      vol: {vol},      down: {down} ".format(cut=cut, up=up, vol=vol, down=down))
+		print("lib_conductance {} ", nx.algorithms.conductance(G, S))
 	return up/down
 
 
@@ -208,12 +212,14 @@ def compute_regularised_sc(G, resf, debug=False):
 		if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
 			corecut = get_corecut(G=G, S=seq, tau=tau, n=n)
 			if corecut < min_corecut:
+				#print("min")
 				min_cardinal = min(len(seq), len(rest_seq))
 				min_corecut = corecut
 				min_seq = seq
 		else:
 			corecut = get_corecut(G=G, S=rest_seq, tau=tau, n=n)
 			if corecut < min_corecut:
+				#print("min")
 				min_cardinal = min(len(seq), len(rest_seq))
 				min_corecut = corecut
 				min_seq = rest_seq
