@@ -99,25 +99,38 @@ def compute_vanilla_sc(G, resf, debug=False):
 
 	yns = sorted(yns, key=lambda tup: tup[0])
 
-	min_seq = [yns[0][1]]
-	print("minseq", min_seq, file=resf)
-
-	min_conduct = nx.algorithms.conductance(G=G, S=min_seq)
 	seq = [yns[0][1]]
+	rest_seq = [yns[i][1] for i in range(1,len(vecs)-1)]
+	min_cardinal = min(len(seq), len(rest_seq))
 
+	if(nx.volume(G, seq) < nx.volume(G, rest_seq)):
+		min_conduct = nx.algorithms.conductance(G=G, S=seq)
+	else:
+		min_conduct = nx.algorithms.conductance(G=G, S=rest_seq)
 	print("min_conduct", min_conduct, file=resf)
 
 	for i in range(1, len(vecs)-1):
 		seq += [yns[i][1]]  # check why volume is 0
+		rest_seq = rest_seq[1:]
 		if debug:
 			print("seq", seq, file=resf)
-		conduct = nx.algorithms.conductance(G=G, S=seq)
-		if conduct < min_conduct:
-			min_conduct = conduct
-			min_seq = seq
+
+		if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
+			conduct = nx.algorithms.conductance(G=G, S=seq)
+			if conduct < min_conduct:
+				min_cardinal = min(len(seq), len(rest_seq))
+				min_conduct = conduct
+				min_seq = seq
+		else:
+			conduct = nx.algorithms.conductance(G=G, S=rest_seq)
+			if conduct < min_conduct:
+				min_cardinal = min(len(seq), len(rest_seq))
+				min_conduct = conduct
+				min_seq = rest_seq
 
 	print("min_conduct", min_conduct, file=resf)
-	print("min_seq", min_seq, file=resf)
+	print("min_cardinal", min_cardinal, file=resf)
+	#print("min_seq", min_seq, file=resf)
 	return min_conduct
 
 
@@ -171,25 +184,44 @@ def compute_regularised_sc(G, resf, debug=False):
 
 	yns = sorted(yns, key=lambda tup: tup[0])
 
-	min_seq = [yns[0][1]]
-	print("minseq", min_seq, file=resf)
 
-	min_corecut = get_corecut(G=G, S=min_seq, tau=tau, n=n)
 	seq = [yns[0][1]]
+	rest_seq = [yns[i][1] for i in range(1, len(vecs) - 1)]
+
+
+	min_cardinal = min(len(seq), len(rest_seq))
+	if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
+		min_corecut = get_corecut(G=G, S=seq, tau=tau, n=n)
+	else:
+		min_corecut = get_corecut(G=G, S=rest_seq, tau=tau, n=n)
+
 
 	print("min_corecut", min_corecut, file=resf)
+
 
 	for i in range(1, len(vecs) - 1):
-		seq += [yns[i][1]]
+		seq += [yns[i][1]]  # check why volume is 0
+		rest_seq = rest_seq[1:]
 		if debug:
 			print("seq", seq, file=resf)
-		corecut = get_corecut(G=G, S=seq, tau=tau, n=n)
-		if corecut < min_corecut:
-			min_corecut = corecut
-			min_seq = seq
+
+		if (nx.volume(G, seq) < nx.volume(G, rest_seq)):
+			corecut = get_corecut(G=G, S=seq, tau=tau, n=n)
+			if corecut < min_corecut:
+				min_cardinal = min(len(seq), len(rest_seq))
+				min_corecut = corecut
+				min_seq = seq
+		else:
+			corecut = get_corecut(G=G, S=rest_seq, tau=tau, n=n)
+			if corecut < min_corecut:
+				min_cardinal = min(len(seq), len(rest_seq))
+				min_corecut = corecut
+				min_seq = rest_seq
+
 
 	print("min_corecut", min_corecut, file=resf)
-	print("min_seq", min_seq, file=resf)
+	print("min_cardinal", min_cardinal, file=resf)
+	#print("min_seq", min_seq, file=resf)
 	return min_corecut
 
 
@@ -200,13 +232,18 @@ def process_all_datasets(list):
 
 
 def plot():
+	print("Plotting")
+	# for vsc - rsc
 	# number of nodes in the smaller partition set
+	# training conductance
+	# test conductance
+	# running time
+
 
 def experiments():
-	dataset_name = "data/ca-GrQc"
-	G_train, G_test = process_dataset(dataset_name)
-	resf = open(dataset_name + "_results.txt", 'w')
-	compute_regularised_sc(G_test, resf, debug=True)
+	list = [3,5, 6,78,9,4]
+	list = list[1:]
+	print(list)
 
 
 def main():
@@ -218,7 +255,7 @@ def main():
 	if opt.experimental:
 		experiments()
 	else:
-		dataset_name = "data/ca-GrQc"
+		dataset_name = "data/p2p-Gnutella08"
 		G_train, G_test = process_dataset(dataset_name)
 		resf = open(dataset_name + "_results.txt", 'w')
 
