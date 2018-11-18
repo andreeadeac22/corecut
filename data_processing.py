@@ -87,7 +87,6 @@ def compute_vanilla_sc(G, resf, debug=False):
 	A = (nx.to_scipy_sparse_matrix(G)).astype(float)
 	D = np.array([1/math.sqrt(val) for (node, val) in G.degree()])
 
-
 	vals, vecs = sp_linalg.eigs(L, k=2)
 	vecs = vecs[:,1] # second eigenvector
 	y_vecs = D*vecs
@@ -97,26 +96,25 @@ def compute_vanilla_sc(G, resf, debug=False):
 	for n in G.nodes():
 		yns += [[y_vecs[i], n]]
 		i +=1
-
 	yns = sorted(yns, key=lambda tup: tup[0])
 
 	total_seq = [el[1] for el in yns]
 	min_conduct = 1
 
-	for i in tqdm(range(len(vecs) - 1), mininterval=3, leave=False, desc='  - (Vanilla)   '):
+	for i in tqdm(range(len(vecs) - 1), mininterval=10, leave=False, desc='  - (Vanilla)   '):
 		seq = total_seq[:(i+1)]
 		rest_seq = total_seq[(i+1):]
 
 		if(nx.volume(G, seq) != 0 and nx.volume(G, rest_seq) != 0):
 				conduct = nx.algorithms.conductance(G=G, S=seq)
-				print("conduct", conduct)
+				#print("conduct", conduct)
 				if conduct < min_conduct:
 					min_cardinal = min(len(seq), len(rest_seq))
 					min_conduct = conduct
 					min_seq = seq.copy()
 
-	print("min_conduct", min_conduct, file=resf)
-	print("min_cardinal", min_cardinal, file=resf)
+	print("train vanilla min_conduct", min_conduct, file=resf)
+	print("train vanilla min_cardinal", min_cardinal, file=resf)
 	return min_conduct, min_seq
 
 
@@ -135,11 +133,9 @@ def get_corecut(G, S, tau, n):
 
 
 def compute_regularised_sc(G, resf, debug=False):
-
 	degrees = [val for (node, val) in G.degree()]
 	sum_deg = sum(degrees)
 	n = len(degrees)
-
 	tau = sum_deg/n
 
 	A = (nx.to_scipy_sparse_matrix(G)).astype(float)
@@ -147,7 +143,7 @@ def compute_regularised_sc(G, resf, debug=False):
 	indices = [i for i in range(n)]
 	row = np.array(indices)
 	col = row
-	data = [ 1/math.sqrt(d + tau/n) for d in degrees]
+	data = [ 1/math.sqrt(d + tau) for d in degrees]
 	D = csr_matrix((data, (row, col)), shape=(n, n))  #degree matrix
 
 	id_data = np.ones(n)
@@ -164,7 +160,6 @@ def compute_regularised_sc(G, resf, debug=False):
 	for node in G.nodes():
 		yns += [[y_vecs[i], node]]
 		i += 1
-
 	yns = sorted(yns, key=lambda tup: tup[0])
 
 
@@ -188,9 +183,8 @@ def compute_regularised_sc(G, resf, debug=False):
 				min_corecut = corecut
 				min_seq = rest_seq.copy()
 
-
-	print("min_corecut", min_corecut, file=resf)
-	print("min_cardinal", min_cardinal, file=resf)
+	print("train regularised min_corecut", min_corecut, file=resf)
+	print("train regularised min_cardinal", min_cardinal, file=resf)
 	return min_corecut, min_seq
 
 
@@ -229,6 +223,22 @@ def main():
 		G_train, G_test = process_dataset(dataset_name)
 		resf = open(dataset_name + "_results.txt", 'w')
 
+		print("###############   VAN      TRAIN        ###################################")
+		print("###############   VAN      TRAIN        ###################################", file=resf)
+		train_vsc, min_seq2 = compute_vanilla_sc(G_train, resf=resf)
+
+		print("###############   VAN  TEST        ###################################")
+		print("###############   VAN   TEST        ###################################", file=resf)
+		test_vsc = nx.algorithms.conductance(G_test, min_seq2)
+		print("test vanilla min_corecut", test_vsc, file=resf)
+
+		print("vanilla train_vsc", train_vsc)
+		print("min_seq1", len(min_seq2))
+		print("vanilla test_vsc", test_vsc)
+
+
+
+
 		print("###############    REG     TRAIN        ###################################")
 		print("###############    REG     TRAIN        ###################################", file=resf)
 		train_rsc, min_seq1 = compute_regularised_sc(G_train, resf=resf)
@@ -239,20 +249,6 @@ def main():
 		print("regularised train_rsc", train_rsc)
 		print("min_seq1", len(min_seq1))
 		print("regularised test_rsc", test_rsc)
-
-
-
-
-		print("###############   VAN      TRAIN        ###################################")
-		print("###############   VAN      TRAIN        ###################################", file=resf)
-		train_vsc, min_seq2 = compute_vanilla_sc(G_train, resf=resf)
-
-		print("###############   VAN  TEST        ###################################")
-		print("###############   VAN   TEST        ###################################", file=resf)
-		test_vsc = nx.algorithms.conductance(G_test, min_seq2)
-		print("vanilla train_vsc", train_vsc)
-		print("min_seq1", len(min_seq2))
-		print("vanilla test_vsc", test_vsc)
 
 
 
