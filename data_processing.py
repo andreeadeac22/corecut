@@ -18,7 +18,18 @@ import scipy.sparse.linalg as sp_linalg
 from scipy.sparse import csr_matrix
 import scipy.sparse.csgraph as csgr
 import networkx as nx
+import time
 
+
+dict = {'train_van_conduct': 0,
+		'test_van_conduct': 0,
+		'train_reg_conduct':0,
+		'test_reg_conduct':0,
+		'size':0,
+		'van_balance':0,
+		'reg_balance':0,
+		'van_running_time':0,
+		'reg_running_time':0}
 
 
 # call using: sp_linalg.eigs(A_sparse, 3)
@@ -82,15 +93,23 @@ def process_dataset(dataset_name):
 	return G_train, G_test
 
 
-def compute_vanilla_sc(G, resf, debug=False):
-	L = nx.normalized_laplacian_matrix(G)
-	A = (nx.to_scipy_sparse_matrix(G)).astype(float)
-	D = np.array([1/math.sqrt(val) for (node, val) in G.degree()])
 
-	vals, vecs = sp_linalg.eigs(L, k=2)
+def compute_vanilla_sc(G, resf, debug=False):
+	D = np.array([1/math.sqrt(val) for val in [G.degree()[i] for i in G.nodes()]])
+	L = nx.normalized_laplacian_matrix(G)
+
+	start_time = time.time()
+	vals, vecs = sp_linalg.eigsh(L, k=8)
+
+	print("vals", vals)
+	elapsed = time.time() - start_time
+	print("train vanilla time", elapsed, file=resf)
+	dict['van_running_time'] = elapsed
+
 	vecs = vecs[:,1] # second eigenvector
 	y_vecs = D*vecs
 
+	#yns = [ [y_vecs[i], ]]
 	i=0
 	yns = []
 	for n in G.nodes():
@@ -99,9 +118,10 @@ def compute_vanilla_sc(G, resf, debug=False):
 	yns = sorted(yns, key=lambda tup: tup[0])
 
 	total_seq = [el[1] for el in yns]
+	random.shuffle(total_seq)
 	min_conduct = 1
 
-	for i in tqdm(range(len(vecs) - 1), mininterval=10, leave=False, desc='  - (Vanilla)   '):
+	for i in tqdm(range(len(y_vecs) - 1), mininterval=10, leave=False, desc='  - (Vanilla)   '):
 		seq = total_seq[:(i+1)]
 		rest_seq = total_seq[(i+1):]
 
@@ -112,9 +132,15 @@ def compute_vanilla_sc(G, resf, debug=False):
 					min_cardinal = min(len(seq), len(rest_seq))
 					min_conduct = conduct
 					min_seq = seq.copy()
+		else:
+			print("Volume is 0")
+			print("seq", seq)
 
 	print("train vanilla min_conduct", min_conduct, file=resf)
 	print("train vanilla min_cardinal", min_cardinal, file=resf)
+
+	dict['van_balance'] = min_cardinal
+
 	return min_conduct, min_seq
 
 
@@ -151,9 +177,15 @@ def compute_regularised_sc(G, resf, debug=False):
 
 	L = I - (D@A)@D
 
-	vals, vecs = sp_linalg.eigs(L, k=2)
-	y_vecs = D.dot(vecs)
-	y_vecs = y_vecs[:, 1]  # second eigenvector
+	start_time = time.time()
+	vals, vecs = sp_linalg.eigsh(L, k=6)
+	elapsed =  time.time() - start_time
+	print("train regularised time", elapsed, file=resf)
+
+	dict['reg_running_time'] = elapsed
+
+	vecs = vecs[:,1] # second eigenvector
+	y_vecs = D*vecs
 
 	i = 0
 	yns = []
@@ -166,7 +198,7 @@ def compute_regularised_sc(G, resf, debug=False):
 	total_seq = [el[1] for el in yns]
 	min_corecut =  1
 
-	for i in tqdm(range(len(vecs) - 1), mininterval=3, leave=False, desc='  - (Regularised)   '):
+	for i in tqdm(range(len(y_vecs) - 1), mininterval=3, leave=False, desc='  - (Regularised)   '):
 		seq = total_seq[:(i + 1)]
 		rest_seq = total_seq[(i + 1):]
 
@@ -185,6 +217,9 @@ def compute_regularised_sc(G, resf, debug=False):
 
 	print("train regularised min_corecut", min_corecut, file=resf)
 	print("train regularised min_cardinal", min_cardinal, file=resf)
+
+	dict['reg_balance'] = min_cardinal
+
 	return min_corecut, min_seq
 
 
@@ -222,34 +257,44 @@ def main():
 		dataset_name = opt.file_name
 		G_train, G_test = process_dataset(dataset_name)
 		resf = open(dataset_name + "_results.txt", 'w')
+		dict_resf = open(dataset_name + "_res.txt", 'wb')
+
 
 		print("###############   VAN      TRAIN        ###################################")
 		print("###############   VAN      TRAIN        ###################################", file=resf)
-		train_vsc, min_seq2 = compute_vanilla_sc(G_train, resf=resf)
+		train_vsc, min_seq1 = compute_vanilla_sc(G_train, resf=resf)
 
 		print("###############   VAN  TEST        ###################################")
 		print("###############   VAN   TEST        ###################################", file=resf)
-		test_vsc = nx.algorithms.conductance(G_test, min_seq2)
+		test_vsc = nx.algorithms.conductance(G_test, min_seq1)
 		print("test vanilla min_corecut", test_vsc, file=resf)
 
-		print("vanilla train_vsc", train_vsc)
-		print("min_seq1", len(min_seq2))
-		print("vanilla test_vsc", test_vsc)
+		dict['train_van_conduct'] = train_vsc
+		dict['test_van_conduct'] = test_vsc
 
+		print("vanilla train_vsc", train_vsc)
+		print("min_seq1", len(min_seq1))
+		print("vanilla test_vsc", test_vsc)
 
 
 
 		print("###############    REG     TRAIN        ###################################")
 		print("###############    REG     TRAIN        ###################################", file=resf)
-		train_rsc, min_seq1 = compute_regularised_sc(G_train, resf=resf)
+		train_rsc, min_seq2 = compute_regularised_sc(G_train, resf=resf)
 
 		print("###############  REG  TEST        ###################################")
 		print("###############  REG  TEST        ###################################", file=resf)
-		test_rsc = nx.algorithms.conductance(G_test, min_seq1)
+		test_rsc = nx.algorithms.conductance(G_test, min_seq2)
+		print("test regularised min_corecut", test_rsc, file=resf)
+
+		dict['train_reg_conduct'] = train_rsc
+		dict['test_reg_conduct'] = test_rsc
+
 		print("regularised train_rsc", train_rsc)
-		print("min_seq1", len(min_seq1))
+		print("min_seq1", len(min_seq2))
 		print("regularised test_rsc", test_rsc)
 
+		dict_resf.write(pickle.dumps(dict))
 
 
 
